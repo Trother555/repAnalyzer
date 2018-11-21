@@ -32,10 +32,10 @@ def process_args(args):
     if args['user'] and args['token']:
         user_pass = b64encode(str.encode("%s:%s" % (args['user'], args['token']))).decode("ascii")
         headers = {'Authorization' : f'Basic {user_pass}'}
+        
 def get_commits_url(**args):
     """Parse params and return request url
     """
-    # parsing args
     params = '?per_page=100'
     if args['since']:
         params += f'&since={args["since"].isoformat()}'
@@ -83,7 +83,7 @@ def load_commits(**args):
     # determine count of pages
     pages_count = get_pages_count(resp.getheader('Link'))
     with concurrent.futures.ThreadPoolExecutor(max_workers = 5) as executor:
-        partial = functools.partial(load_url_json, request_url, auth=True)
+        partial = functools.partial(load_url_json, request_url)
         res_map = executor.map(partial, list(range(2, pages_count+1)))
         commits += itertools.chain.from_iterable(res_map)
     return commits
@@ -121,8 +121,11 @@ def get_pulls_count(**args):
     return(opened, closed)
 
 def get_old_pulls_count(**args):
+    until_date = date.today()-timedelta(days=30)
+    if(args['since'] and args['since'].date() > until_date):
+        return None
     request_url = get_search_url(repo=args['repo'], branch = args['branch'],
-        until = date.today()-timedelta(days=30), since = args['since'], search='pr')
+        until = until_date, since = args['since'], search='pr')
     return load_url_json(request_url+'+state:open')['total_count']
 
 def get_issues_count(**args):
@@ -135,8 +138,11 @@ def get_issues_count(**args):
     return(opened, closed)
 
 def get_old_issues(**args):
+    until_date = date.today()-timedelta(days=14)
+    if(args['since'] and args['since'].date() > until_date):
+        return None
     request_url = get_search_url(repo=args['repo'], branch = None,
-        until = date.today()-timedelta(days=14), since = args['since'], search='issue')
+        until = until_date, since = args['since'], search='issue')
     return load_url_json(request_url+'+state:open')['total_count']
 
 
@@ -153,7 +159,7 @@ def main(args):
     parser.add_argument('repo')
     parser.add_argument('--since', required=False, help='Date in format dd-mm-yyyy')
     parser.add_argument('--until', required=False, help='Date in format dd-mm-yyyy')
-    parser.add_argument('--branch', required=False, default = 'master')
+    parser.add_argument('--branch', required=False, default = 'master', help="Github repo url")
     parser.add_argument('--user', required=False, help='Github user name')
     parser.add_argument('--token', required=False, help='Github token or password')
     args = vars(parser.parse_args())
@@ -172,12 +178,18 @@ def main(args):
     print(f'\n{"Open pull requests:":30}{pulls_count[0]:<30}')
     print(f'{"Closed pull requests:":30}{pulls_count[1]:<30}')
     old_pulls = get_old_pulls_count(**args)
-    print(f'{"Old pull requests:":30}{old_pulls:<30}')
+    if old_pulls:
+        print(f'{"Old pull requests:":30}{old_pulls:<30}')
+    else:
+        print('They were no old pull request since given date')
     issues_count = get_issues_count(**args)
     print(f'\n{"Open issues:":30}{issues_count[0]:<30}')
     print(f'{"Closed issues:":30}{pulls_count[1]:<30}')
     old_issues = get_old_issues(**args)
-    print(f'{"Old issues:":30}{old_issues:<30}')
+    if old_issues:
+        print(f'{"Old issues:":30}{old_issues:<30}')
+    else:
+        print('They were no old issues since given date')
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
